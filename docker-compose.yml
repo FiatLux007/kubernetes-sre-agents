@@ -1,0 +1,127 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  k8s-agent-api:
+    image: k8s-agent-v1-demo:local
+    build: .
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      DRY_RUN: ${DRY_RUN:-true}
+      TASK_ALWAYS_EAGER: ${TASK_ALWAYS_EAGER:-false}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_MODEL: ${LLM_MODEL}
+      JIRA_BASE_URL: ${JIRA_BASE_URL}
+      JIRA_PROJECT_KEY: ${JIRA_PROJECT_KEY}
+      JIRA_API_TOKEN: ${JIRA_API_TOKEN}
+      JIRA_USER_EMAIL: ${JIRA_USER_EMAIL}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_OWNER: ${GITHUB_OWNER:-}
+      GITHUB_REPO: ${GITHUB_REPO:-}
+      GITHUB_BASE_BRANCH: ${GITHUB_BASE_BRANCH:-main}
+      MAX_MEMORY_LIMIT_GI: ${MAX_MEMORY_LIMIT_GI:-4}
+      DEDUPE_TTL_SECONDS: ${DEDUPE_TTL_SECONDS:-300}
+    ports:
+      - "18080:8000"
+    depends_on:
+      - redis
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+  k8s-agent-worker:
+    image: k8s-agent-v1-demo:local
+    build: .
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      DRY_RUN: ${DRY_RUN:-true}
+      TASK_ALWAYS_EAGER: ${TASK_ALWAYS_EAGER:-false}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_MODEL: ${LLM_MODEL}
+      JIRA_BASE_URL: ${JIRA_BASE_URL}
+      JIRA_PROJECT_KEY: ${JIRA_PROJECT_KEY}
+      JIRA_API_TOKEN: ${JIRA_API_TOKEN}
+      JIRA_USER_EMAIL: ${JIRA_USER_EMAIL}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_OWNER: ${GITHUB_OWNER:-}
+      GITHUB_REPO: ${GITHUB_REPO:-}
+      GITHUB_BASE_BRANCH: ${GITHUB_BASE_BRANCH:-main}
+      MAX_MEMORY_LIMIT_GI: ${MAX_MEMORY_LIMIT_GI:-4}
+      DEDUPE_TTL_SECONDS: ${DEDUPE_TTL_SECONDS:-300}
+    depends_on:
+      - redis
+    command: celery -A app.worker.celery_app worker --loglevel=info
+
+  k8s-agent-beat:
+    image: k8s-agent-v1-demo:local
+    build: .
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      DRY_RUN: ${DRY_RUN:-true}
+      TASK_ALWAYS_EAGER: ${TASK_ALWAYS_EAGER:-false}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_MODEL: ${LLM_MODEL}
+      JIRA_BASE_URL: ${JIRA_BASE_URL}
+      JIRA_PROJECT_KEY: ${JIRA_PROJECT_KEY}
+      JIRA_API_TOKEN: ${JIRA_API_TOKEN}
+      JIRA_USER_EMAIL: ${JIRA_USER_EMAIL}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_OWNER: ${GITHUB_OWNER:-}
+      GITHUB_REPO: ${GITHUB_REPO:-}
+      GITHUB_BASE_BRANCH: ${GITHUB_BASE_BRANCH:-main}
+      MAX_MEMORY_LIMIT_GI: ${MAX_MEMORY_LIMIT_GI:-4}
+      DEDUPE_TTL_SECONDS: ${DEDUPE_TTL_SECONDS:-300}
+    depends_on:
+      - redis
+      - k8s-agent-worker
+    command: celery -A app.worker.celery_app beat --loglevel=info --schedule /tmp/celerybeat-schedule
+
+  k3s:
+    image: rancher/k3s:v1.30.5-k3s1
+    privileged: true
+    command: server --disable traefik --node-name k3s-demo --tls-san k3s --write-kubeconfig /output/kubeconfig.yaml --write-kubeconfig-mode 666
+    environment:
+      K3S_TOKEN: k8s-agent-demo-token
+      K3S_KUBECONFIG_OUTPUT: /output/kubeconfig.yaml
+    ports:
+      - "6443:6443"
+    volumes:
+      - k3s-data:/var/lib/rancher/k3s
+      - kubeconfig:/output
+
+  bootstrap:
+    image: k8s-agent-bootstrap:local
+    build:
+      context: .
+      dockerfile: bootstrap/Dockerfile
+    environment:
+      KUBECONFIG: /kubeconfig/kubeconfig.yaml
+      KUBECONFIG_PATH: /kubeconfig/kubeconfig.yaml
+      WEBHOOK_URL: http://k8s-agent-api:8000/webhooks/robusta
+      DEMO_NAMESPACE: k8s-agent-demo
+      GITOPS_REPO_URL: https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}
+    depends_on:
+      - k3s
+      - k8s-agent-api
+      - k8s-agent-worker
+    volumes:
+      - kubeconfig:/kubeconfig
+      - ./deploy:/workspace/deploy:ro
+    profiles:
+      - setup
+
+volumes:
+  k3s-data:
+  kubeconfig:

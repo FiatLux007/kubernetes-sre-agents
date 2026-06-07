@@ -1,0 +1,19 @@
+{
+  "cluster": "minikube",
+  "alert_name": "ContainerOOMKilled",
+  "reason": "OOMKilled",
+  "severity": "critical",
+  "labels": {
+    "namespace": "k8s-agent-demo",
+    "workload": "oom-demo",
+    "pod": "oom-demo-6d7f8f4c9f-ab123",
+    "container": "app",
+    "memory_limit": "1Gi"
+  },
+  "logs": "java.lang.OutOfMemoryError: Java heap space\nKilled process after heap exhaustion",
+  "describe_snapshot": "Last State: Terminated\nReason: OOMKilled\nExit Code: 137",
+  "events": [
+    "Container app was OOMKilled because it exceeded its memory limit"
+  ]
+}
+

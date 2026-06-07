@@ -1,0 +1,23 @@
+clusterName: "k3s-k8s-agent-demo"
+
+globalConfig:
+  cluster_name: "k3s-k8s-agent-demo"
+  prometheus_url: "http://dummy-prometheus.com"
+
+sinksConfig:
+  - webhook_sink:
+      name: k8s_agent_webhook
+      url: "__WEBHOOK_URL__"
+      format: json
+
+customPlaybooks:
+  - triggers:
+      - on_pod_oom_killed: {}
+      - on_pod_crash_loop: {}
+    actions:
+      - create_finding:
+          severity: HIGH
+          title: "OOMKilled / CrashLoopBackOff event: $name"
+          aggregation_key: "k8s-agent-demo"
+      - logs_enricher:
+          tail_lines: 50

@@ -1,0 +1,12 @@
+__pycache__/
+.pytest_cache/
+.venv/
+.env
+*.pyc
+._*
+k8s_agent.egg-info/
+deploy/robusta/values.generated.yaml
+*.log
+.idea/
+.vscode/
+tmp/
