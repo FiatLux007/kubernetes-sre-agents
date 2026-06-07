@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+IMAGE_NAME="k8s-agent-v1-demo:local"
+BOOTSTRAP_IMAGE_NAME="k8s-agent-bootstrap:local"
+
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "Missing required command: $1"
+    exit 1
+  }
+}
+
+check_requirements() {
+  require_cmd docker
+  docker compose version >/dev/null
+}
+
+ensure_env() {
+  if [ ! -f "${ROOT_DIR}/.env" ]; then
+    cp "${ROOT_DIR}/.env.example" "${ROOT_DIR}/.env"
+  fi
+}
+
+clean_context() {
+  local build_context
+  build_context="$(mktemp -d "${TMPDIR:-/tmp}/k8s-agent-buildctx.XXXXXX")"
+  docker run --rm \
+    -v "${ROOT_DIR}:/src:ro" \
+    -v "${build_context}:/dst" \
+    alpine:3.20 \
+    sh -c "cd /src && tar --exclude='._*' --exclude='.venv' --exclude='.pytest_cache' --exclude='__pycache__' --exclude='*.pyc' --exclude='.env' -cf - . | tar -xf - -C /dst"
+  echo "${build_context}"
+}
+
+build_images() {
+  local build_context
+  build_context="$(clean_context)"
+  docker build -t "${IMAGE_NAME}" "${build_context}"
+  docker build -t "${BOOTSTRAP_IMAGE_NAME}" -f "${build_context}/bootstrap/Dockerfile" "${build_context}"
+}
+
+wait_for_compose_health() {
+  for _ in $(seq 1 120); do
+    if docker compose -f "${ROOT_DIR}/docker-compose.yml" exec -T k8s-agent-api \
+      python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz')" >/dev/null 2>&1; then
+      echo "k8s-agent-api is ready"
+      return 0
+    fi
+    sleep 2
+  done
+  echo "Timed out waiting for k8s-agent-api readiness"
+  exit 1
+}
+
+up() {
+  check_requirements
+  ensure_env
+  build_images
+  docker compose -f "${ROOT_DIR}/docker-compose.yml" up -d --no-build redis k8s-agent-api k8s-agent-worker k8s-agent-beat k3s
+  wait_for_compose_health
+  docker compose -f "${ROOT_DIR}/docker-compose.yml" run --rm bootstrap
+
+  echo
+  echo "Demo is up. Everything runs through Docker Compose."
+  echo "Try:"
+  echo "  ./demo status"
+  echo "  ./demo trigger oom"
+  echo "  ./demo trigger crashloop"
+  echo "  ./demo logs"
+}
+
+status() {
+  docker compose -f "${ROOT_DIR}/docker-compose.yml" ps
+  docker compose -f "${ROOT_DIR}/docker-compose.yml" run --rm bootstrap k8s-agent-bootstrap status
+}
+
+logs() {
+  docker compose -f "${ROOT_DIR}/docker-compose.yml" logs k8s-agent-api k8s-agent-worker k8s-agent-beat bootstrap
+}
+
+trigger() {
+  local target="${1:-}"
+  case "${target}" in
+    oom)
+      docker compose -f "${ROOT_DIR}/docker-compose.yml" run --rm bootstrap k8s-agent-bootstrap trigger oom
+      ;;
+    crashloop)
+      docker compose -f "${ROOT_DIR}/docker-compose.yml" run --rm bootstrap k8s-agent-bootstrap trigger crashloop
+      ;;
+    *)
+      echo "Usage: ./demo trigger oom|crashloop"
+      exit 1
+      ;;
+  esac
+}
+
+case "${1:-}" in
+  up)
+    up
+    ;;
+  status)
+    status
+    ;;
+  logs)
+    logs
+    ;;
+  trigger)
+    trigger "${2:-}"
+    ;;
+  *)
+    echo "Usage: ./demo up|status|logs|trigger oom|trigger crashloop"
+    exit 1
+    ;;
+esac

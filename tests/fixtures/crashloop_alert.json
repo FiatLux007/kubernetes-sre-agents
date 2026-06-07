@@ -1,0 +1,19 @@
+{
+  "cluster": "minikube",
+  "alert_name": "KubePodCrashLooping",
+  "reason": "CrashLoopBackOff",
+  "severity": "warning",
+  "labels": {
+    "namespace": "k8s-agent-demo",
+    "workload": "crashloop-demo",
+    "pod": "crashloop-demo-7ccf9b4c77-cd456",
+    "container": "app",
+    "memory_limit": "256Mi"
+  },
+  "logs": "Error: missing required environment variable DEMO_REQUIRED_CONFIG\nApplication startup failed",
+  "describe_snapshot": "State: Waiting\nReason: CrashLoopBackOff\nLast State: Terminated\nExit Code: 1",
+  "events": [
+    "Back-off restarting failed container app"
+  ]
+}
+

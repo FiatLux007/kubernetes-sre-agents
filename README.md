@@ -1,74 +1,83 @@
-# Kubernetes SRE Agents
+# K8s-Agent V1 Demo
 
-Open-source Kubernetes reliability agents that detect runtime and configuration issues, deduplicate Jira incidents, and open reviewable GitHub remediation PRs.
+K8s-Agent V1 is a local demo for AI-assisted Kubernetes incident diagnosis.
 
-## Overview
+It runs the agent services, Redis, a k3s Kubernetes cluster, Robusta, and failing workloads through Docker Compose.
 
-Kubernetes SRE Agents is an MVP control plane for incident-to-remediation workflows. It connects Kubernetes health signals, Jira ticket operations, GitHub pull requests, MCP-integrated tools, event queues, CI loops, and human-review gates into a reproducible reliability workflow.
+## Quick Start
 
-The project is designed around three asynchronous agents:
-
-- **Sentinel Agent** detects Kubernetes runtime/configuration issues, collects evidence, fingerprints incidents, and creates or updates deduplicated Jira tickets.
-- **Resolver Agent** claims ready Jira tickets, moves them through implementation states, plans remediation, executes tool-calling and test loops, and opens GitHub PRs for infrastructure fixes.
-- **Auditor Agent** reviews remediation PRs with lightweight static checks, CI status inspection, risk notes, and human-review handoff.
-
-## Goals
-
-- Detect common Kubernetes reliability issues such as `CrashLoopBackOff`, `ImagePullBackOff`, failed rollouts, unhealthy deployments, and resource-related pod failures.
-- Prevent duplicate incident spam by using idempotent event handlers and incident fingerprints.
-- Keep remediation reviewable by preferring GitHub PRs over direct production mutations.
-- Maintain an auditable trail of agent runs, tool calls, ticket transitions, retries, test results, and PR summaries.
-- Support human approval gates before risky actions.
-
-## Architecture
-
-```text
-Kubernetes clusters
-  -> Sentinel workers
-  -> incident event queue
-  -> Jira ticket service
-  -> work item queue
-  -> Resolver workers
-  -> GitHub remediation PRs
-  -> PR review queue
-  -> Auditor workers
+```bash
+cp .env.example .env
+./demo up
 ```
 
-## Control Plane
+The demo starts:
 
-The backend control plane is responsible for coordination rather than reasoning. It provides:
+- `k8s-agent-api` in Docker Compose
+- `k8s-agent-worker` in Docker Compose
+- `redis` in Docker Compose
+- `k3s` in Docker Compose
+- Robusta inside k3s
+- `oom-demo` and `crashloop-demo` inside k3s
 
-- Idempotent event handling
-- Retry policies and dead-letter queues
-- Agent run state transitions
-- Incident fingerprinting and deduplication
-- Audit logs for tool calls and decisions
-- Typed adapters for Kubernetes, Jira, and GitHub
-- Human-review gates for remediation workflows
+No local FastAPI, Celery, Redis, minikube, kubectl, or Helm installation is required.
 
-## MVP Workflow
+## Demo Commands
 
-1. Sentinel scans Kubernetes workloads and detects a health issue.
-2. Sentinel computes an incident fingerprint and checks whether an open Jira ticket already exists.
-3. If no open ticket exists, Sentinel creates a Jira issue with symptoms, affected resources, evidence, probable root cause, and suggested next steps.
-4. Resolver polls Jira for tickets in `Ready to Start`, claims one, transitions it to `In Progress`, and writes an implementation plan.
-5. Resolver executes a tool-calling loop, applies code or infrastructure changes, runs validation, and opens a GitHub PR.
-6. Resolver writes a final summary to Jira and moves the ticket to `Ready for Review`.
-7. Auditor reviews the PR, runs lightweight checks, summarizes risk, and leaves a GitHub review comment.
+```bash
+./demo status
+./demo trigger oom
+./demo trigger crashloop
+./demo logs
+```
 
-## Planned Stack
+The API is exposed on:
 
-- Python 3.12+
-- FastAPI
-- Pydantic
-- PostgreSQL
-- Redis-backed event queues
-- Kubernetes Python client
-- Jira MCP integration
-- GitHub MCP integration
-- OpenTelemetry
-- GitHub Actions
+```text
+http://localhost:18080
+```
 
-## Status
+Robusta calls the webhook from inside the Docker Compose network through:
 
-This repository is currently an early MVP scaffold. The first implementation target is an end-to-end demo for Kubernetes incident detection, Jira ticket creation, ticket-driven remediation planning, GitHub PR creation, and lightweight PR review.
+```text
+http://k8s-agent-api:8000/webhooks/robusta
+```
+
+## V1 Scope
+
+Supported:
+
+- OOMKilled diagnosis and dry-run PR recommendation
+- CrashLoopBackOff diagnosis only
+- Redis dedupe by workload fingerprint
+- dry-run Jira/GitHub/LLM adapters
+- Robusta webhook integration
+- k3s Kubernetes simulation inside Docker Compose
+
+Not included in V1:
+
+- automatic production changes
+- PR merge automation
+- direct `kubectl apply` by the agent
+- Kafka
+- Qdrant
+- LangGraph
+- Istio or Argo Rollouts
+
+## Development
+
+```bash
+uv run --extra test pytest
+./demo up
+./demo status
+curl -X POST http://localhost:18080/webhooks/robusta \
+  -H "Content-Type: application/json" \
+  --data @tests/fixtures/oom_alert.json
+./demo logs
+```
+
+## Configuration
+
+Copy `.env.example` to `.env` and fill real values when needed. The default is `DRY_RUN=true`, so no real Jira issue, GitHub PR, or LLM call is made.
+
+See [docs/configuration.md](docs/configuration.md).

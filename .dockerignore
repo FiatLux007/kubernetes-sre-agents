@@ -1,0 +1,9 @@
+.git
+.venv
+.pytest_cache
+__pycache__
+*.pyc
+._*
+.env
+deploy/robusta/values.generated.yaml
+

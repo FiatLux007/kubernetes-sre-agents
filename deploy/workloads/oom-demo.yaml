@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oom-demo
+  namespace: k8s-agent-demo
+  labels:
+    app: oom-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: oom-demo
+  template:
+    metadata:
+      labels:
+        app: oom-demo
+        memory_limit: 32Mi
+    spec:
+      containers:
+        - name: app
+          image: python:3.11-slim
+          command:
+            - python
+            - -c
+            - |
+              data = []
+              while True:
+                  data.append("x" * 1024 * 1024)
+          resources:
+            requests:
+              memory: 16Mi
+              cpu: 10m
+            limits:
+              memory: 32Mi
+              cpu: 100m
+
