@@ -43,6 +43,27 @@ def test_fingerprint_ignores_random_pod_suffix():
     assert fingerprint(incident_a) == fingerprint(incident_b)
 
 
+def test_robusta_payload_allows_null_service():
+    payload = {
+        "title": "OOMKilled / CrashLoopBackOff event: oom-demo-5786877df7-52wjl",
+        "cluster_name": "k3s-k8s-agent-demo",
+        "aggregation_key": "k8s-agent-demo",
+        "service": None,
+        "subject": {
+            "name": "oom-demo-5786877df7-52wjl",
+            "kind": "pod",
+            "namespace": "k8s-agent-demo",
+            "labels": {"app": "oom-demo", "memory_limit": "32Mi"},
+        },
+    }
+
+    incident = parse_robusta_payload(payload)
+
+    assert incident.namespace == "k8s-agent-demo"
+    assert incident.workload_name == "oom-demo"
+    assert incident.workload_kind == "Deployment"
+
+
 def test_memory_policy_blocks_above_max():
     payload = load_fixture("oom_alert.json")
     payload["labels"]["memory_limit"] = "3Gi"
@@ -52,4 +73,3 @@ def test_memory_policy_blocks_above_max():
 
     assert status == PolicyStatus.BLOCKED
     assert "exceeds max" in reason
-

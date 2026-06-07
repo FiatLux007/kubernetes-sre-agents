@@ -8,8 +8,8 @@ from app.schemas import IncidentPayload
 
 def parse_robusta_payload(payload: dict[str, Any]) -> IncidentPayload:
     # Handle Robusta native Finding format
-    subject = payload.get("subject", {})
-    service = payload.get("service", {})
+    subject = _as_mapping(payload.get("subject"))
+    service = _as_mapping(payload.get("service"))
 
     labels = _collect_mapping(payload, ["labels", "commonLabels"])
     alert = _first_mapping(payload, ["alert", "alerts", "finding", "issue", "data"])
@@ -125,6 +125,10 @@ def _first_mapping(payload: dict[str, Any], keys: list[str]) -> dict[str, Any]:
     return {}
 
 
+def _as_mapping(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
 def _collect_mapping(payload: dict[str, Any], keys: list[str]) -> dict[str, Any]:
     for key in keys:
         value = payload.get(key)
@@ -192,4 +196,3 @@ def _workload_from_pod(pod_name: str) -> str:
 def _slug(value: str) -> str:
     slug = re.sub(r"[^a-zA-Z0-9_.-]+", "-", str(value).strip().lower()).strip("-")
     return slug or "unknown"
-

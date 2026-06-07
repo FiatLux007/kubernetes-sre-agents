@@ -24,6 +24,13 @@ class FakeRedis:
     def hset(self, key, mapping):
         return True
 
+    def get(self, key):
+        return self.values.get(key)
+
+    def setex(self, key, ttl, value):
+        self.values[key] = value
+        return True
+
 
 def test_healthz():
     with TestClient(app) as client:
@@ -54,4 +61,3 @@ def test_webhook_accepts_oom(monkeypatch):
     body = response.json()
     assert body["accepted"] is True
     assert body["dedupe"]["is_new"] is True
-
