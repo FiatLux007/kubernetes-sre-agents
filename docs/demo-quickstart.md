@@ -37,6 +37,16 @@ The OOM demo should produce a diagnosis and PR recommendation in dry-run logs.
 
 The CrashLoopBackOff demo should produce a diagnosis only.
 
+## Reset Demo Dedupe State
+
+Redis stores short-lived dedupe keys and active Jira correlations. Clear them before repeating the same incident test when you want the agent to process it as a fresh event, especially after switching between dry-run and real Jira/PR testing.
+
+```bash
+docker compose -f docker-compose.yml exec -T redis redis-cli --scan \
+  | grep -E '^(active_issue:k8s-agent-demo:|incident:k3s-k8s-agent-demo:k8s-agent-demo:)' \
+  | xargs -r docker compose -f docker-compose.yml exec -T redis redis-cli DEL
+```
+
 ## Useful Checks
 
 ```bash
@@ -47,10 +57,14 @@ curl http://localhost:18080/readyz
 
 ## Cleanup Notes
 
-This project intentionally does not provide a bulk delete script.
-
-Use explicit commands when you want to clean up:
+Stop and remove the demo containers and network:
 
 ```bash
-docker compose down
+./demo down
+```
+
+`./demo down` keeps Docker volumes and local images. If you want to delete k3s and Redis state as well, run:
+
+```bash
+docker compose down -v
 ```
