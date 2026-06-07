@@ -31,6 +31,16 @@ class FakeRedis:
         self.values[key] = value
         return True
 
+    def set(self, key, value, nx=False, ex=None):
+        if nx and key in self.values:
+            return False
+        self.values[key] = value
+        return True
+
+    def delete(self, key):
+        self.values.pop(key, None)
+        return True
+
 
 def test_healthz():
     with TestClient(app) as client:

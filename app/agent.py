@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 
 from app.clients.github import GitHubClient
 from app.clients.jira import JiraClient
@@ -76,18 +77,39 @@ def handle_incident(payload: dict, settings: Settings, redis_client) -> dict:
     is_appended = False
 
     if existing_issue_key:
-        issue = JiraIssue(key=existing_issue_key, url=f"{settings.jira_base_url}/browse/{existing_issue_key}")
-        comment = render_jira_comment(incident, decision, pr=None)
-        comment = f"## 🔄 Subsequent Incident Detected\n\n" + comment
-        jira.add_comment(issue, comment)
-        redis_client.expire(correlation_key, settings.correlation_ttl_seconds)
+        issue = _append_to_existing_issue(existing_issue_key, incident, decision, settings, jira, redis_client, correlation_key)
         is_appended = True
     else:
-        issue = jira.create_issue(incident, decision)
-        jira.add_comment(issue, render_jira_comment(incident, decision, pr=None))
-        if decision.pr_required:
-            logger.info("AI-Remediation requested. Remediation Agent will pick up issue %s via Jira polling.", issue.key)
-        redis_client.setex(correlation_key, settings.correlation_ttl_seconds, issue.key)
+        lock_key = f"{correlation_key}:lock"
+        if _acquire_correlation_lock(redis_client, lock_key):
+            try:
+                existing_issue_key = redis_client.get(correlation_key)
+                if existing_issue_key:
+                    issue = _append_to_existing_issue(existing_issue_key, incident, decision, settings, jira, redis_client, correlation_key)
+                    is_appended = True
+                else:
+                    issue = jira.create_issue(incident, decision)
+                    jira.add_comment(issue, render_jira_comment(incident, decision, pr=None))
+                    if decision.pr_required:
+                        logger.info("AI-Remediation requested. Remediation Agent will pick up issue %s via Jira polling.", issue.key)
+                    redis_client.setex(correlation_key, settings.correlation_ttl_seconds, issue.key)
+            finally:
+                _delete_key(redis_client, lock_key)
+        else:
+            existing_issue_key = _wait_for_correlated_issue(redis_client, correlation_key)
+            if existing_issue_key:
+                issue = _append_to_existing_issue(existing_issue_key, incident, decision, settings, jira, redis_client, correlation_key)
+                is_appended = True
+            else:
+                logger.warning(
+                    "correlation.lock_timeout namespace=%s workload=%s key=%s",
+                    incident.namespace,
+                    incident.workload_name,
+                    correlation_key,
+                )
+                issue = jira.create_issue(incident, decision)
+                jira.add_comment(issue, render_jira_comment(incident, decision, pr=None))
+                redis_client.setex(correlation_key, settings.correlation_ttl_seconds, issue.key)
 
     logger.info(
         "incident.processed type=%s namespace=%s workload=%s pr_required=%s policy=%s appended=%s",
@@ -125,6 +147,46 @@ def render_jira_comment(incident: IncidentPayload, decision: AgentDecision, pr: 
     return "\n".join(lines)
 
 
+def _append_to_existing_issue(
+    issue_key: str,
+    incident: IncidentPayload,
+    decision: AgentDecision,
+    settings: Settings,
+    jira: JiraClient,
+    redis_client,
+    correlation_key: str,
+):
+    from app.schemas import JiraIssue
+
+    issue = JiraIssue(key=issue_key, url=f"{settings.jira_base_url}/browse/{issue_key}")
+    comment = render_jira_comment(incident, decision, pr=None)
+    comment = f"## 🔄 Subsequent Incident Detected\n\n" + comment
+    jira.add_comment(issue, comment)
+    redis_client.expire(correlation_key, settings.correlation_ttl_seconds)
+    return issue
+
+
+def _acquire_correlation_lock(redis_client, lock_key: str, ttl_seconds: int = 30) -> bool:
+    return bool(redis_client.set(lock_key, "1", nx=True, ex=ttl_seconds))
+
+
+def _wait_for_correlated_issue(redis_client, correlation_key: str, timeout_seconds: float = 15.0, interval_seconds: float = 0.25) -> str:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        issue_key = redis_client.get(correlation_key)
+        if issue_key:
+            return issue_key
+        time.sleep(interval_seconds)
+    return ""
+
+
+def _delete_key(redis_client, key: str) -> None:
+    try:
+        redis_client.delete(key)
+    except AttributeError:
+        pass
+
+
 def _evidence(incident: IncidentPayload, defaults: list[str]) -> list[str]:
     items = list(defaults)
     if incident.logs:
@@ -132,4 +194,3 @@ def _evidence(incident: IncidentPayload, defaults: list[str]) -> list[str]:
     if incident.events:
         items.append(f"Event sample: {incident.events[0][:160]}")
     return items
-

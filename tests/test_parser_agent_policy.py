@@ -43,6 +43,32 @@ def test_fingerprint_ignores_random_pod_suffix():
     assert fingerprint(incident_a) == fingerprint(incident_b)
 
 
+def test_fingerprint_ignores_pod_name_embedded_in_robusta_title():
+    payload_a = {
+        "title": "OOMKilled / CrashLoopBackOff event: oom-demo-7ff6fc9987-t5k8v",
+        "cluster_name": "k3s-k8s-agent-demo",
+        "aggregation_key": "k8s-agent-demo",
+        "service": {"name": "oom-demo", "namespace": "k8s-agent-demo", "resource_type": "Deployment"},
+        "subject": {
+            "name": "oom-demo-7ff6fc9987-t5k8v",
+            "kind": "pod",
+            "namespace": "k8s-agent-demo",
+            "labels": {"app": "oom-demo", "memory_limit": "32Mi", "pod-template-hash": "7ff6fc9987"},
+        },
+    }
+    payload_b = {
+        **payload_a,
+        "title": "OOMKilled / CrashLoopBackOff event: oom-demo-7fffb9b8dd-rfc57",
+        "subject": {
+            **payload_a["subject"],
+            "name": "oom-demo-7fffb9b8dd-rfc57",
+            "labels": {"app": "oom-demo", "memory_limit": "32Mi", "pod-template-hash": "7fffb9b8dd"},
+        },
+    }
+
+    assert fingerprint(parse_robusta_payload(payload_a)) == fingerprint(parse_robusta_payload(payload_b))
+
+
 def test_robusta_payload_allows_null_service():
     payload = {
         "title": "OOMKilled / CrashLoopBackOff event: oom-demo-5786877df7-52wjl",

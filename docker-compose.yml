@@ -54,10 +54,17 @@ services:
       GITHUB_OWNER: ${GITHUB_OWNER:-}
       GITHUB_REPO: ${GITHUB_REPO:-}
       GITHUB_BASE_BRANCH: ${GITHUB_BASE_BRANCH:-main}
+      LANGGRAPH_CHECKPOINT_PATH: /data/langgraph/checkpoints.sqlite
+      KUBECTL_TIMEOUT_SECONDS: ${KUBECTL_TIMEOUT_SECONDS:-10}
+      KUBECONFIG: /kubeconfig/kubeconfig.yaml
       MAX_MEMORY_LIMIT_GI: ${MAX_MEMORY_LIMIT_GI:-4}
       DEDUPE_TTL_SECONDS: ${DEDUPE_TTL_SECONDS:-300}
     depends_on:
       - redis
+      - k3s
+    volumes:
+      - langgraph-checkpoints:/data/langgraph
+      - kubeconfig:/kubeconfig:ro
     command: celery -A app.worker.celery_app worker --loglevel=info
 
   k8s-agent-beat:
@@ -125,3 +132,4 @@ services:
 volumes:
   k3s-data:
   kubeconfig:
+  langgraph-checkpoints:

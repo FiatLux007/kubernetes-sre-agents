@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     github_repo: str = ""
     github_base_branch: str = "main"
 
+    langgraph_checkpoint_path: str = "/tmp/k8s-agent-langgraph/checkpoints.sqlite"
+    kubectl_timeout_seconds: int = Field(default=10, gt=0)
+
     max_memory_limit_gi: float = Field(default=4.0, gt=0)
     dedupe_ttl_seconds: int = Field(default=300, gt=0)
     correlation_ttl_seconds: int = Field(default=3600, gt=0)
@@ -37,4 +40,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-

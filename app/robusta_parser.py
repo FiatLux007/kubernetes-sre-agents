@@ -108,8 +108,6 @@ def fingerprint(incident: IncidentPayload) -> str:
         incident.workload_kind,
         incident.workload_name,
         incident.container_name or "container",
-        incident.alert_name or "alert",
-        incident.reason or "reason",
         error_signature(incident),
     ]
     return ":".join(_slug(part) for part in parts)
