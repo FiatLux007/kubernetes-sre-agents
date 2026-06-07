@@ -41,6 +41,11 @@
 - **Regression Tests**: Added tests proving that pod hash changes do not change the incident fingerprint, and that a worker encountering an in-flight correlation lock appends to the existing issue instead of creating a new Jira ticket.
 - **Manual Dry-run Validation**: Verified the Docker Compose dry-run path: Robusta -> FastAPI webhook -> Redis dedupe -> Celery worker -> dry-run LLM/Jira handling. Also verified RemediationGraph execution inside the worker container with fake Jira/GitHub/LLM clients.
 
+### 7. Reliability and Ticket Lifecycle Improvements
+- **Infinite Remediation Loop Prevention**: Differentiated permanent from temporary errors in LangGraph. Permanent validation or missing-file errors now shift the ticket to `In Review`, removing it from the polling queue. Temporary API errors keep the ticket in `To Do` for automatic retries.
+- **Dynamic AI-Remediation Labeling**: Corrected Jira label assignment. Only actionable incidents where `pr_required` is true get the `AI-Remediation` label. Diagnostics and unsupported alerts get `AI-Generated` instead, preventing them from being erroneously picked up by the remediation polling loop.
+- **JQL Deduplication Fallback**: Implemented a secondary Jira Search (JQL) fallback for ticket deduplication. If the Redis cache fails or expires, the system queries Jira directly for active tickets with matching namespaces and workloads, reliably appending context instead of creating duplicate tickets.
+
 ## Current Architecture State
 
 - **Event Source**: Robusta (Running in K3s)
