@@ -30,13 +30,15 @@ class JiraClient:
         desc = f"Incident: {incident.alert_name}\nReason: {incident.reason}\n\nDiagnosis:\n{decision.llm_diagnosis}\n\nEvidence:\n" + "\n".join(decision.evidence)
         desc += f"\n\n{{code:json}}\n{agent_context}\n{{code}}"
 
+        labels = ["AI-Remediation"] if decision.pr_required else ["AI-Generated"]
+
         payload = {
             "fields": {
                 "project": {"key": self.settings.jira_project_key},
                 "summary": decision.summary[:255],
                 "description": desc,
                 "issuetype": {"name": "Task"},
-                "labels": ["AI-Remediation"]
+                "labels": labels
             }
         }
         try:

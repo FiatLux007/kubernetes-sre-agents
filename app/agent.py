@@ -84,6 +84,16 @@ def handle_incident(payload: dict, settings: Settings, redis_client) -> dict:
         if _acquire_correlation_lock(redis_client, lock_key):
             try:
                 existing_issue_key = redis_client.get(correlation_key)
+                
+                if not existing_issue_key:
+                    jql = f'project = "{settings.jira_project_key}" AND statusCategory != Done'
+                    issues = jira.search_issues(jql)
+                    for issue_data in issues:
+                        summary = issue_data.get("fields", {}).get("summary", "")
+                        if incident.namespace in summary and incident.workload_name in summary:
+                            existing_issue_key = issue_data["key"]
+                            break
+                
                 if existing_issue_key:
                     issue = _append_to_existing_issue(existing_issue_key, incident, decision, settings, jira, redis_client, correlation_key)
                     is_appended = True

@@ -8,6 +8,7 @@ import sqlite3
 import subprocess
 from typing import Any
 
+import httpx
 import yaml
 from langgraph.graph import END, START, StateGraph
 
@@ -127,11 +128,31 @@ def run_remediation(
             "thread_id": remediation_thread_id(issue_key),
             "state": result,
         }
+    except httpx.RequestError as exc:
+        logger.warning("remediation.graph_temporary_failure issue=%s exc=%s", issue_key, exc)
+        issue = JiraIssue(key=issue_key, url=issue_url)
+        jira.add_comment(issue, f"## Auto-remediation temporary failure\n\nTransient API error: {exc}. Will retry later.")
+        jira.transition_issue(issue, "To Do")
+        return {
+            "status": "failed",
+            "thread_id": remediation_thread_id(issue_key),
+            "state": {"issue_key": issue_key, "issue_url": issue_url, "failure_reason": str(exc)},
+        }
+    except httpx.HTTPStatusError as exc:
+        logger.warning("remediation.graph_temporary_failure issue=%s exc=%s", issue_key, exc)
+        issue = JiraIssue(key=issue_key, url=issue_url)
+        jira.add_comment(issue, f"## Auto-remediation temporary failure\n\nTransient API error: {exc}. Will retry later.")
+        jira.transition_issue(issue, "To Do")
+        return {
+            "status": "failed",
+            "thread_id": remediation_thread_id(issue_key),
+            "state": {"issue_key": issue_key, "issue_url": issue_url, "failure_reason": str(exc)},
+        }
     except Exception as exc:
         logger.exception("remediation.graph_failed issue=%s", issue_key)
         issue = JiraIssue(key=issue_key, url=issue_url)
-        jira.add_comment(issue, f"## Auto-remediation failed\n\nUnexpected graph error: {exc}")
-        jira.transition_issue(issue, "To Do")
+        jira.add_comment(issue, f"## Auto-remediation failed\n\nUnexpected graph error: {exc}. Please review manually.")
+        jira.transition_issue(issue, "In Review")
         return {
             "status": "failed",
             "thread_id": remediation_thread_id(issue_key),
@@ -282,14 +303,14 @@ def fail_to_jira(state: RemediationState, jira: JiraClient) -> RemediationState:
     errors = state.get("validation_errors", [])
     error_text = "\n".join(f"- {error}" for error in errors) if errors else "- No validation errors captured."
     comment = (
-        "## Auto-remediation failed\n\n"
+        "## Auto-remediation failed (Permanent)\n\n"
         f"Reason: {reason}\n\n"
         f"Validation errors:\n{error_text}\n\n"
-        "Please add guidance in Jira comments and leave the issue in To Do for the next polling cycle."
+        "Please add guidance in Jira comments or fix the underlying issue."
     )
     jira.add_comment(issue, comment)
-    jira.transition_issue(issue, "To Do")
-    return {"jira_status": "To Do", "next_action": "human_feedback_required"}
+    jira.transition_issue(issue, "In Review")
+    return {"jira_status": "In Review", "next_action": "human_feedback_required"}
 
 
 def route_after_context(state: RemediationState) -> str:
